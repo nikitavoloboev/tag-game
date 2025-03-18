@@ -1,11 +1,16 @@
 import React from 'react';
-import { Canvas, useThree, useFrame } from '@react-three/fiber';
+import { useState, useEffect } from 'react';
+import { Canvas } from '@react-three/fiber';
 import { KeyboardControls, Environment } from '@react-three/drei';
 import { Physics } from '@react-three/rapier';
-import { 
-  EffectComposer, 
-  Bloom, 
-  ChromaticAberration, 
+import { EffectComposer, SMAA } from '@react-three/postprocessing';
+import { useAccount } from 'jazz-react';
+import { Game, ListOfPlayers } from './schemas/game';
+import { Group } from 'jazz-tools';
+import { Leva } from 'leva';
+import { MobileControlsProvider } from './contexts/MobileControlsContext';
+import { MobileControls } from './components/MobileControls';
+import { GameScene } from './components/GameScene';
   Vignette, 
   SMAA, 
   BrightnessContrast,
@@ -43,37 +48,65 @@ function DynamicDepthOfField({ enabled, target, focalLength, bokehScale }) {
     <DepthOfField
       focusDistance={focusDistance}
       focalLength={focalLength}
-      bokehScale={bokehScale}
-      height={1080}
-    />
-  ) : null;
-}
-
 function App() {
-  // Order matters for GUI - call lighting controls last
-  const characterControls = useCharacterControls();
-  const cameraControls = useCameraControls();
-  const lighting = useLightingControls();
-  const postProcessing = usePostProcessingControls();
+const [gameId, setGameId] = useState<ID<Game>>();
+const { me } = useAccount();
 
-  return (
-    <div className="w-full h-screen">
-      <Leva />
-      <MobileControlsProvider>
-        <MobileControls />
-        <KeyboardControls
-          map={[
+useEffect(() => {
+const urlParams = new URLSearchParams(window.location.search);
+const gameIdFromUrl = urlParams.get("game");
+if (gameIdFromUrl) {
+setGameId(gameIdFromUrl as ID<Game>);
+} else {
+// Create new game
+const group = Group.create({ owner: me });
+const playersList = ListOfPlayers.create([], { owner: group });
+const newGame = Game.create(
+    {
+        players: playersList,
+        currentIt: null,
+        status: "waiting",
+    },
+    { owner: group }
+);
+setGameId(newGame.id);
+window.history.pushState({}, "", `?game=${newGame.id}`);
+// TODO: Share invite link: createInviteLink(group, "writer", { valueHint: "game" })
+}
+}, [me]);
+
+if (!gameId) return <div>Loading...</div>;
+
+return (
+<div className="w-full h-screen">
+<Leva />
+<MobileControlsProvider>
+    <MobileControls />
+    <KeyboardControls
+        map={[
             { name: 'forward', keys: ['ArrowUp', 'w', 'W'] },
             { name: 'backward', keys: ['ArrowDown', 's', 'S'] },
             { name: 'left', keys: ['ArrowLeft', 'a', 'A'] },
             { name: 'right', keys: ['ArrowRight', 'd', 'D'] },
             { name: 'jump', keys: ['Space'] },
             { name: 'sprint', keys: ['ShiftLeft', 'ShiftRight'] },
-          ]}
-        >
-          <Canvas shadows>
-          <color attach="background" args={['#1a1a2e']} />
-          <Environment preset="sunset" />
+        ]}
+    >
+        <Canvas shadows>
+            <color attach="background" args={['#1a1a2e']} />
+            <Environment preset="sunset" />
+            <Physics>
+                <GameScene gameId={gameId} />
+            </Physics>
+            <EffectComposer>
+                <SMAA />
+            </EffectComposer>
+        </Canvas>
+    </KeyboardControls>
+</MobileControlsProvider>
+</div>
+);
+}
           <ambientLight intensity={lighting.ambientIntensity} />
           <directionalLight
             castShadow
